@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: c
-        image: gcr.io/blueface/preprocess
+        image: gcr.io/blueface/bert
         env:
           - name: "GOOGLE_APPLICATION_CREDENTIALS"
             value: "/var/run/secret/cloud.google.com/service-account.json"
