@@ -207,7 +207,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
           (teacher_next_sentence_loss, teacher_next_sentence_example_loss,
            teacher_next_sentence_log_probs, teacher_next_sentence_logits) = get_next_sentence_output(
-            bert_config, model.get_pooled_output(), next_sentence_labels)
+            bert_config, teacher.get_pooled_output(), next_sentence_labels)
 
           masked_lm_loss = tf.reduce_mean(tf.squared_difference(teacher_masked_lm_logits,
                                                                 student_masked_lm_logits))
