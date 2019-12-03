@@ -81,25 +81,25 @@ flags.DEFINE_integer("max_eval_steps", 100, "Maximum number of eval steps.")
 
 flags.DEFINE_bool("use_tpu", False, "Whether to use TPU or GPU/CPU.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "tpu_name", None,
     "The Cloud TPU to use for training. This should be either the name "
     "used when creating the Cloud TPU, or a grpc://ip.address.of.tpu:8470 "
     "url.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "tpu_zone", None,
     "[Optional] GCE zone where the Cloud TPU is located in. If not "
     "specified, we will attempt to automatically detect the GCE project from "
     "metadata.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "gcp_project", None,
     "[Optional] Project name for the Cloud TPU-enabled project. If not "
     "specified, we will attempt to automatically detect the GCE project from "
     "metadata.")
 
-tf.flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
+flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
 
 flags.DEFINE_integer(
     "num_tpu_cores", 8,
@@ -172,11 +172,6 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       # map every g layers of the teacher model to the student model
       g = int(teacher_config.num_hidden_layers / bert_config.num_hidden_layers)
 
-      attention_loss = tf.add_n([
-        tf.reduce_sum(
-          tf.squared_difference(teacher.attention_scores[i * g], student_scores)
-        ) for i, student_scores in enumerate(model.attention_scores)])
-
       # project teacher hidden layers down to student hidden layers dims
       with tf.variable_scope('loss'):
         teacher_hidden_layers = teacher.get_all_encoder_layers()
@@ -195,6 +190,11 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           tf.squared_difference(
             teacher.get_embedding_output(),
             model.get_embedding_output()))
+
+        attention_loss = tf.add_n([
+          tf.reduce_sum(
+            tf.squared_difference(teacher.attention_scores[i * g], student_scores)
+          ) for i, student_scores in enumerate(model.attention_scores)])
 
         if FLAGS.pred_distill:
           with tf.variable_scope('teacher'):
@@ -215,33 +215,47 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
     tvars = tf.trainable_variables()
 
-    initialized_variable_names = {}
     scaffold_fn = None
+    checkpoints = []
+    assignment_maps = []
+    student_variable_names = {}
+    teacher_variable_names = {}
+
     if init_checkpoint:
-      (assignment_map, initialized_variable_names
-      ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
-      if use_tpu:
+      (assignment_map, student_variable_names
+       ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+      checkpoints.append(init_checkpoint)
 
-        def tpu_scaffold():
-          tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
-          return tf.train.Scaffold()
+      assignment_maps.append(assignment_map)
+    if FLAGS.teacher_checkpoint:
+      (assignment_map, teacher_variable_names
+       ) = modeling.get_assignment_map_from_checkpoint(tvars, FLAGS.teacher_checkpoint, teacher=True)
+      checkpoints.append(FLAGS.teacher_checkpoint)
+      assignment_maps.append(assignment_map)
 
-        scaffold_fn = tpu_scaffold
-      else:
-        tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+    if use_tpu:
+      def tpu_scaffold():
+        for c, a in zip(checkpoints, assignment_maps):
+          tf.logging.info("*** Loading vars from Checkpoint %s ***" % c)
+          tf.train.init_from_checkpoint(c, a)
+        return tf.train.Scaffold()
 
-    tf.logging.info("**** Trainable Variables ****")
-    for var in tvars:
-      init_string = ""
-      if var.name in initialized_variable_names:
-        init_string = ", *INIT_FROM_CKPT*"
-      tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
-                      init_string)
+      scaffold_fn = tpu_scaffold
+    else:
+      for c, a in zip(checkpoints, assignment_maps):
+        tf.logging.info("*** Loading vars from Checkpoint %s ***" % c)
+        tf.train.init_from_checkpoint(c, a)
 
     output_spec = None
+    var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'bert/')
+    var_list += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'loss/')
+    tf.logging.info("**** Trainable Variables ****")
+    for var in var_list:
+      tf.logging.info("name = %s, shape = %s", var.name, var.shape)
+
     if mode == tf.estimator.ModeKeys.TRAIN:
       train_op = optimization.create_optimizer(
-          total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
+        total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu, var_list)
 
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode,
