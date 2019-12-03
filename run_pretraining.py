@@ -61,6 +61,8 @@ flags.DEFINE_bool("do_train", False, "Whether to run training.")
 
 flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
 
+flags.DEFINE_bool("eval_teacher", False, "Whether to eval the teacher instead of student.")
+
 flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
 
 flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
@@ -198,11 +200,13 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
         if FLAGS.pred_distill:
           with tf.variable_scope('teacher'):
-            (_, _, _, teacher_masked_lm_logits) = get_masked_lm_output(
+            (teacher_masked_lm_loss, teacher_masked_lm_example_loss,
+             teacher_masked_lm_log_probs, teacher_masked_lm_logits) = get_masked_lm_output(
               teacher_config, teacher.get_sequence_output(), teacher.get_embedding_table(),
               masked_lm_positions, masked_lm_ids, masked_lm_weights)
 
-            (_, _, _, teacher_next_sentence_logits) = get_next_sentence_output(
+            (teacher_next_sentence_loss, teacher_next_sentence_example_loss,
+             teacher_next_sentence_log_probs, teacher_next_sentence_logits) = get_next_sentence_output(
               bert_config, model.get_pooled_output(), next_sentence_labels)
 
           masked_lm_loss = tf.reduce_mean(tf.squared_difference(teacher_masked_lm_logits,
@@ -301,12 +305,18 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
             "next_sentence_accuracy": next_sentence_accuracy,
             "next_sentence_loss": next_sentence_mean_loss,
         }
-
-      eval_metrics = (metric_fn, [
+      if FLAGS.eval_teacher:
+        eval_metrics = (metric_fn, [
+            teacher_masked_lm_example_loss, teacher_masked_lm_log_probs, masked_lm_ids,
+            masked_lm_weights, teacher_next_sentence_example_loss,
+            teacher_next_sentence_log_probs, next_sentence_labels
+        ])
+      else:
+        eval_metrics = (metric_fn, [
           masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
           masked_lm_weights, next_sentence_example_loss,
           next_sentence_log_probs, next_sentence_labels
-      ])
+        ])
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode,
           loss=total_loss,
