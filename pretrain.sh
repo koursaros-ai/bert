@@ -7,11 +7,11 @@ export STUDENT_DIR=../uncased_L-4_H-768_A-12
 python3 run_pretraining.py \
   --input_file=${BUCKET}/bert_pretrain_data/*.tf_record \
   --output_dir=${BUCKET}/pretraining_output \
-  --do_train=True \
+  --do_train=False \
   --do_eval=True \
   --bert_config_file=${STUDENT_DIR}/bert_config.json \
   --teacher_config_file=${TEACHER_DIR}/bert_config.json \
-  --init_teacher_checkpoint=${TEACHER_DIR}/bert_model.ckpt \
+  --init_teacher_checkpoint=${BUCKET}/uncased_L-12_H-768_A-12/bert_model.ckpt \
   --train_batch_size=128 \
   --max_seq_length=128 \
   --max_predictions_per_seq=20 \
@@ -20,7 +20,8 @@ python3 run_pretraining.py \
   --learning_rate=2e-5 \
   --distill \
   --use_tpu \
-  --tpu_name pretrain
+  --tpu_name pretrain \
+  --eval_teacher
 
 
 # BERT BASE BASELINE EVAL

@@ -198,24 +198,24 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
             tf.squared_difference(teacher.attention_scores[i * g], student_scores)
           ) for i, student_scores in enumerate(model.attention_scores)])
 
-        if FLAGS.pred_distill:
-          with tf.variable_scope('teacher'):
-            (teacher_masked_lm_loss, teacher_masked_lm_example_loss,
-             teacher_masked_lm_log_probs, teacher_masked_lm_logits) = get_masked_lm_output(
-              teacher_config, teacher.get_sequence_output(), teacher.get_embedding_table(),
-              masked_lm_positions, masked_lm_ids, masked_lm_weights)
+      if FLAGS.pred_distill:
+        with tf.variable_scope('teacher'):
+          (teacher_masked_lm_loss, teacher_masked_lm_example_loss,
+           teacher_masked_lm_log_probs, teacher_masked_lm_logits) = get_masked_lm_output(
+            teacher_config, teacher.get_sequence_output(), teacher.get_embedding_table(),
+            masked_lm_positions, masked_lm_ids, masked_lm_weights)
 
-            (teacher_next_sentence_loss, teacher_next_sentence_example_loss,
-             teacher_next_sentence_log_probs, teacher_next_sentence_logits) = get_next_sentence_output(
-              bert_config, model.get_pooled_output(), next_sentence_labels)
+          (teacher_next_sentence_loss, teacher_next_sentence_example_loss,
+           teacher_next_sentence_log_probs, teacher_next_sentence_logits) = get_next_sentence_output(
+            bert_config, model.get_pooled_output(), next_sentence_labels)
 
           masked_lm_loss = tf.reduce_mean(tf.squared_difference(teacher_masked_lm_logits,
                                                                 student_masked_lm_logits))
           next_sentence_loss = tf.reduce_mean(tf.squared_difference(teacher_next_sentence_logits,
                                                                     student_next_sentence_logits))
           total_loss = masked_lm_loss + next_sentence_loss
-        else:
-          total_loss = attention_loss + hidden_loss + embedding_loss
+      else:
+        total_loss = attention_loss + hidden_loss + embedding_loss
     else:
       total_loss = masked_lm_loss + next_sentence_loss
 
@@ -226,6 +226,8 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     assignment_maps = []
     student_variable_names = {}
     teacher_variable_names = {}
+
+    assert FLAGS.teacher_checkpoint or not FLAGS.distill
 
     if init_checkpoint:
       (assignment_map, student_variable_names
