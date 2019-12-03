@@ -105,6 +105,18 @@ flags.DEFINE_integer(
     "num_tpu_cores", 8,
     "Only used if `use_tpu` is True. Total number of TPU cores to use.")
 
+flags.DEFINE_bool("distill", False, "Whether to run distillation.")
+
+flags.DEFINE_bool("pred_distill", False, "Whether to run distillation on the prediction layer.")
+
+flags.DEFINE_string(
+  "teacher_config_file", None,
+  "The config json file corresponding to the teacher BERT model. "
+  "This specifies the model architecture.")
+
+flags.DEFINE_string(
+  "teacher_checkpoint", None,
+  "Initial checkpoint for teacher model (usually from a pre-trained BERT model).")
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
@@ -137,13 +149,67 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         use_one_hot_embeddings=use_one_hot_embeddings)
 
     (masked_lm_loss,
-     masked_lm_example_loss, masked_lm_log_probs) = get_masked_lm_output(
+     masked_lm_example_loss, masked_lm_log_probs, student_masked_lm_logits) = get_masked_lm_output(
          bert_config, model.get_sequence_output(), model.get_embedding_table(),
          masked_lm_positions, masked_lm_ids, masked_lm_weights)
 
     (next_sentence_loss, next_sentence_example_loss,
-     next_sentence_log_probs) = get_next_sentence_output(
+     next_sentence_log_probs, student_next_sentence_logits) = get_next_sentence_output(
          bert_config, model.get_pooled_output(), next_sentence_labels)
+
+    if FLAGS.distill:
+      teacher_config = modeling.BertConfig.from_json_file(FLAGS.teacher_config_file)
+      with tf.variable_scope("teacher"):
+        teacher = modeling.BertModel(
+          config=teacher_config,
+          is_training=False,
+          input_ids=input_ids,
+          input_mask=input_mask,
+          token_type_ids=segment_ids,
+          use_one_hot_embeddings=use_one_hot_embeddings
+        )
+
+      # map every g layers of the teacher model to the student model
+      g = int(teacher_config.num_hidden_layers / bert_config.num_hidden_layers)
+
+      attention_loss = tf.add_n([
+        tf.reduce_sum(
+          tf.squared_difference(teacher.attention_scores[i * g], student_scores)
+        ) for i, student_scores in enumerate(model.attention_scores)])
+
+      # project teacher hidden layers down to student hidden layers dims
+      with tf.variable_scope('loss'):
+        teacher_hidden_layers = teacher.get_all_encoder_layers()
+
+        hidden_loss = tf.add_n([
+          tf.reduce_sum(
+            tf.squared_difference(tf.layers.dense(
+              teacher_hidden_layers[i * g],
+              units=bert_config.hidden_size,
+              kernel_initializer=modeling.create_initializer(
+                bert_config.initializer_range)
+            ), student_hidden)
+          ) for i, student_hidden in enumerate(model.get_all_encoder_layers())])
+
+        embedding_loss = tf.reduce_sum(
+          tf.squared_difference(
+            teacher.get_embedding_output(),
+            model.get_embedding_output()))
+
+        if FLAGS.pred_distill:
+          with tf.variable_scope('teacher'):
+            (_, _, _, teacher_masked_lm_logits) = get_masked_lm_output(
+              teacher_config, teacher.get_sequence_output(), teacher.get_embedding_table(),
+              masked_lm_positions, masked_lm_ids, masked_lm_weights)
+
+            (_, _, _, teacher_next_sentence_logits) = get_next_sentence_output(
+              bert_config, model.get_pooled_output(), next_sentence_labels)
+
+          masked_lm_loss = tf.reduce_mean(tf.squared_difference(teacher_masked_lm_logits,
+                                                                student_masked_lm_logits))
+          next_sentence_loss = tf.reduce_mean(tf.squared_difference(teacher_next_sentence_logits,
+                                                                    student_next_sentence_logits))
+
 
     total_loss = masked_lm_loss + next_sentence_loss
 
@@ -279,7 +345,7 @@ def get_masked_lm_output(bert_config, input_tensor, output_weights, positions,
     denominator = tf.reduce_sum(label_weights) + 1e-5
     loss = numerator / denominator
 
-  return (loss, per_example_loss, log_probs)
+  return (loss, per_example_loss, log_probs, logits)
 
 
 def get_next_sentence_output(bert_config, input_tensor, labels):
@@ -302,7 +368,7 @@ def get_next_sentence_output(bert_config, input_tensor, labels):
     one_hot_labels = tf.one_hot(labels, depth=2, dtype=tf.float32)
     per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
     loss = tf.reduce_mean(per_example_loss)
-    return (loss, per_example_loss, log_probs)
+    return (loss, per_example_loss, log_probs, logits)
 
 
 def gather_indexes(sequence_tensor, positions):
