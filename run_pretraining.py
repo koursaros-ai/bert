@@ -209,9 +209,11 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                                                                 student_masked_lm_logits))
           next_sentence_loss = tf.reduce_mean(tf.squared_difference(teacher_next_sentence_logits,
                                                                     student_next_sentence_logits))
-
-
-    total_loss = masked_lm_loss + next_sentence_loss
+          total_loss = masked_lm_loss + next_sentence_loss
+        else:
+          total_loss = attention_loss + hidden_loss + embedding_loss
+    else:
+      total_loss = masked_lm_loss + next_sentence_loss
 
     tvars = tf.trainable_variables()
 
@@ -262,6 +264,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           loss=total_loss,
           train_op=train_op,
           scaffold_fn=scaffold_fn)
+
     elif mode == tf.estimator.ModeKeys.EVAL:
 
       def metric_fn(masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
