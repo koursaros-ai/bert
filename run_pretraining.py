@@ -213,7 +213,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                                                                 student_masked_lm_logits))
           next_sentence_distill_loss = tf.reduce_mean(tf.squared_difference(teacher_next_sentence_logits,
                                                                     student_next_sentence_logits))
-          total_loss = masked_lm_distill_loss + masked_lm_loss
+          total_loss = masked_lm_distill_loss + masked_lm_loss + attention_loss
       else:
         total_loss = attention_loss + hidden_loss + embedding_loss
     else:
