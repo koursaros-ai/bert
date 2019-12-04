@@ -209,8 +209,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
            teacher_next_sentence_log_probs, teacher_next_sentence_logits) = get_next_sentence_output(
             teacher_config, teacher.get_pooled_output(), next_sentence_labels)
 
-          masked_lm_distill_loss = tf.reduce_mean(tf.squared_difference(teacher_masked_lm_log_probs,
-                                                                masked_lm_log_probs))
+          masked_lm_distill_loss = -tf.nn.softmax(teacher_masked_lm_logits) * tf.nn.log_softmax(student_masked_lm_logits)
           next_sentence_distill_loss = tf.reduce_mean(tf.squared_difference(teacher_next_sentence_logits,
                                                                     student_next_sentence_logits))
           total_loss = masked_lm_distill_loss + masked_lm_loss
