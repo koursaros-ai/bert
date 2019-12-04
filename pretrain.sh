@@ -4,6 +4,7 @@ export BUCKET=gs://koursaros
 export TEACHER_DIR=../uncased_L-12_H-768_A-12
 export STUDENT_DIR=../uncased_L-4_H-768_A-12
 
+#gsutil rm -r ${BUCKET}/pretraining_output
 python3 run_pretraining.py \
   --input_file=${BUCKET}/bert_pretrain_data/*.tf_record \
   --output_dir=${BUCKET}/pretraining_output \
@@ -16,9 +17,10 @@ python3 run_pretraining.py \
   --max_seq_length=128 \
   --max_predictions_per_seq=20 \
   --num_train_steps=10000 \
-  --num_warmup_steps=100 \
+  --num_warmup_steps=1000 \
   --learning_rate=2e-5 \
   --distill \
+  --pred_distill \
   --use_tpu \
   --tpu_name pretrain
 
