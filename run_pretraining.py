@@ -175,28 +175,33 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       g = int(teacher_config.num_hidden_layers / bert_config.num_hidden_layers)
 
       # project teacher hidden layers down to student hidden layers dims
-      with tf.variable_scope('loss'):
-        teacher_hidden_layers = teacher.get_all_encoder_layers()
+      # with tf.variable_scope('loss'):
+      teacher_hidden_layers = teacher.get_all_encoder_layers()
 
-        hidden_loss = tf.add_n([
-          tf.reduce_sum(
-            tf.squared_difference(tf.layers.dense(
-              teacher_hidden_layers[i * g],
-              units=bert_config.hidden_size,
-              kernel_initializer=modeling.create_initializer(
-                bert_config.initializer_range)
-            ), student_hidden)
-          ) for i, student_hidden in enumerate(model.get_all_encoder_layers())])
+      hidden_loss = tf.add_n([
+        tf.reduce_sum(
+          tf.squared_difference(tf.layers.dense(
+            teacher_hidden_layers[i * g],
+            units=bert_config.hidden_size,
+            kernel_initializer=modeling.create_initializer(
+              bert_config.initializer_range)
+          ), student_hidden)
+        ) for i, student_hidden in enumerate(model.get_all_encoder_layers())])
 
-        embedding_loss = tf.reduce_sum(
-          tf.squared_difference(
-            teacher.get_embedding_output(),
-            model.get_embedding_output()))
+      hidden_loss_same_size = tf.add_n([
+        tf.reduce_sum(
+          tf.squared_difference(teacher_hidden_layers[i * g], student_hidden)
+        ) for i, student_hidden in enumerate(model.get_all_encoder_layers())])
 
-        attention_loss = tf.add_n([
-          tf.reduce_sum(
-            tf.squared_difference(teacher.attention_scores[i * g], student_scores)
-          ) for i, student_scores in enumerate(model.attention_scores)])
+      embedding_loss = tf.reduce_mean(
+        tf.squared_difference(
+          teacher.get_embedding_output(),
+          model.get_embedding_output()))
+
+      attention_loss = tf.add_n([
+        tf.reduce_sum(
+          tf.squared_difference(teacher.attention_scores[i * g], student_scores)
+        ) for i, student_scores in enumerate(model.attention_scores)])
 
       if FLAGS.pred_distill:
         with tf.variable_scope('teacher'):
@@ -216,7 +221,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                                                                     student_next_sentence_logits))
           total_loss = masked_lm_distill_loss
       else:
-        total_loss = hidden_loss # + embedding_loss + attention_loss
+        total_loss = hidden_loss_same_size + embedding_loss + attention_loss + masked_lm_loss
     else:
       total_loss = masked_lm_loss + next_sentence_loss
 
