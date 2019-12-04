@@ -71,6 +71,8 @@ flags.DEFINE_bool("do_train", False, "Whether to run training.")
 
 flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
 
+flags.DEFINE_bool("force_rebuild", False, "Whether to force rebuilding the train set tensors.")
+
 flags.DEFINE_bool(
     "do_predict", False,
     "Whether to run the model in inference mode on the test set.")
@@ -866,7 +868,7 @@ def main(_):
 
   if FLAGS.do_train:
     train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
-    if not tf.gfile.exists(train_file):
+    if not tf.gfile.Exists(train_file) and not FLAGS.force_rebuild:
       file_based_convert_examples_to_features(
           train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
     tf.logging.info("***** Running training *****")
