@@ -65,11 +65,12 @@ python3 run_pretraining.py   \
 GLUE_DIR=../glue_data
 MODEL=preds_distill/model.ckpt-50000
 # GET MNLI for student
-python3 run_classifier.py   --task_name=MNLI  \
- --do_train=false   --do_eval=true   \
- --data_dir=$GLUE_DIR/MNLI   --vocab_file=${TEACHER_DIR}/vocab.txt   \
- --bert_config_file=$STUDENT_DIR/bert_config.json   \
+python3 run_classifier.py   --task_name=MNLI   \
+--do_train=false   --do_eval=true    \
+--data_dir=$GLUE_DIR/MNLI   --vocab_file=${TEACHER_DIR}/vocab.txt    \
+--bert_config_file=$STUDENT_DIR/bert_config.json   \
  --init_checkpoint=${BUCKET}/${MODEL}   \
- --max_seq_length=128   --train_batch_size=32   --learning_rate=2e-5   \
- --num_train_epochs=3.0   --output_dir=gs://koursaros/tmp/mnli_output/ \
- --use_tpu --tpu_name pretrain
+  --max_seq_length=128   --train_batch_size=32  \
+   --learning_rate=2e-5    --num_train_epochs=3.0  \
+    --output_dir=gs://koursaros/tmp/mnli_output/ \
+     --use_tpu --tpu_name pretrain
